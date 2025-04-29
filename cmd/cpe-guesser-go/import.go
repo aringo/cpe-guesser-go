@@ -144,19 +144,23 @@ func runImport() {
 				}
 				vendor, product, cpeline := extract(xe.Name)
 
-				// index words
+				// index words - use SAdd for intersection (like Python)
 				for _, w := range canonize(vendor) {
-					pipe.SAdd(ctx, "w:"+w, cpeline)
-					pipe.ZAdd(ctx, "s:"+w, &redis.Z{Score: 1, Member: cpeline})
+					pipe.SAdd(ctx, "w:"+w, cpeline)                             // Set membership for intersection
+					pipe.ZIncrBy(ctx, "s:"+w, 1, cpeline) // Keep for compatibility
 					wordCount++
 				}
 				for _, w := range canonize(product) {
-					pipe.SAdd(ctx, "w:"+w, cpeline)
-					pipe.ZAdd(ctx, "s:"+w, &redis.Z{Score: 1, Member: cpeline})
+					pipe.SAdd(ctx, "w:"+w, cpeline)                             // Set membership for intersection
+					pipe.ZIncrBy(ctx, "s:"+w, 1, cpeline) // Keep for compatibility
 					wordCount++
 				}
-				pipe.ZAdd(ctx, "rank:cpe", &redis.Z{Score: 1, Member: cpeline})
+
+				// Increment counter first to start with 1
 				itemCount++
+
+				// Add to rank:cpe with increasing rank (higher rank = better match)
+				pipe.ZIncrBy(ctx, "rank:cpe", 1, cpeline)
 
 				if itemCount%batchSize == 0 {
 					if _, err := pipe.Exec(ctx); err != nil {

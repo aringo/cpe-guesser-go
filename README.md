@@ -98,11 +98,11 @@ cpe-guesser-go import
 ```
 
 Import options:
-- `--download`: Download CPE data even if file exists
-- `--replace`: Flush and repopulate the CPE database
-- `--update`: Update the CPE database without flushing
-- `--redis`: Redis host:port (overrides config)
-- `--config`: Path to config file
+- `-download`: Download CPE data even if file exists
+- `-replace`: Flush and repopulate the CPE database
+- `-update`: Update the CPE database without flushing
+- `-redis`: Redis host:port (overrides config)
+- `-config`: Path to config file (default: search for settings.yaml in current directory)
 
 ### Server Command
 
@@ -129,7 +129,7 @@ cpe-guesser-go server -port 8080 -redis localhost:6379
 Server options:
 - `-port`: Port to listen on (overrides config)
 - `-redis`: Redis host:port (overrides config)
-- `-config`: Path to config file
+- `-config`: Path to config file (default: search for settings.yaml in current directory)
 
 ## API Endpoints
 

@@ -5,6 +5,11 @@
 *.so
 *.dylib
 
+# Specific binary - make sure we don't ignore the source directory
+/cpe-guesser-go
+# But allow the source code directory 
+!/cmd/cpe-guesser-go/
+
 # Test binary, built with `go test -c`
 *.test
 

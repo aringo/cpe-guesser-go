@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -27,11 +28,25 @@ func Load(configPath string) (*Config, error) {
 
 	// If a config path is provided, use that exact path
 	if configPath != "" {
-		configFile = configPath
+		// Convert to absolute path to be sure
+		absPath, err := filepath.Abs(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get absolute path for %s: %w", configPath, err)
+		}
+		configFile = absPath
+
+		// Debug: check if file exists
+		_, err = os.Stat(configFile)
+		if os.IsNotExist(err) {
+			log.Printf("Debug: Config file not found at: %s", configFile)
+			return nil, fmt.Errorf("config file does not exist: %s", configFile)
+		}
 	} else {
 		// Otherwise, look for settings.yaml in the current directory
 		configFile = "settings.yaml"
 	}
+
+	log.Printf("Debug: Loading config from: %s", configFile)
 
 	// Read the file
 	data, err := os.ReadFile(configFile)

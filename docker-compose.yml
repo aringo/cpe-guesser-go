@@ -20,7 +20,7 @@ services:
 networks:
   cpe-guesser-net:
     driver: bridge
-    internal: true
+    internal: false
 
 volumes:
   valkey_data: 

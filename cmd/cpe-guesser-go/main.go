@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,53 +23,111 @@ var (
 )
 
 func exactSearch(words []string) ([][2]interface{}, error) {
-	keys := make([]string, len(words))
-	for i, w := range words {
-		keys[i] = "s:" + strings.ToLower(w)
-	}
-	if len(keys) == 0 {
+	if len(words) == 0 {
 		return nil, nil
 	}
+
+	// Create keys for each word
+	keys := make([]string, len(words))
+	for i, w := range words {
+		keys[i] = "w:" + strings.ToLower(w)
+	}
+
+	// Get intersection of all sets
+	var cpes []string
+	var err error
 	if len(keys) == 1 {
-		return zRevRangeWithScores(keys[0])
+		cpes, err = rdb.SMembers(ctx, keys[0]).Result()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		cpes, err = rdb.SInter(ctx, keys...).Result()
+		if err != nil {
+			return nil, err
+		}
 	}
-	tmp := "tmp:exact"
-	if err := rdb.ZInterStore(ctx, tmp, &redis.ZStore{Keys: keys, Aggregate: "SUM"}).Err(); err != nil {
-		return nil, err
+
+	if len(cpes) == 0 {
+		return nil, nil
 	}
-	defer rdb.Del(ctx, tmp)
-	return zRevRangeWithScores(tmp)
+
+	// Get rank for each CPE
+	result := make([][2]interface{}, 0, len(cpes))
+	for _, cpe := range cpes {
+		rank, err := rdb.ZScore(ctx, "rank:cpe", cpe).Result()
+		if err == redis.Nil {
+			// If no rank, use 0
+			result = append(result, [2]interface{}{0.0, cpe})
+		} else if err != nil {
+			return nil, err
+		} else {
+			result = append(result, [2]interface{}{rank, cpe})
+		}
+	}
+
+	// Sort by rank (highest first)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i][0].(float64) > result[j][0].(float64)
+	})
+
+	return result, nil
 }
 
 func partialSearch(words []string) ([][2]interface{}, error) {
-	var sets []string
-	for _, w := range words {
-		iter := rdb.Scan(ctx, 0, "s:*"+strings.ToLower(w)+"*", 0).Iterator()
-		for iter.Next(ctx) {
-			sets = append(sets, iter.Val())
-		}
-	}
-	if len(sets) == 0 {
+	if len(words) == 0 {
 		return nil, nil
 	}
-	tmp := "tmp:partial"
-	if err := rdb.ZUnionStore(ctx, tmp, &redis.ZStore{Keys: sets, Aggregate: "SUM"}).Err(); err != nil {
-		return nil, err
-	}
-	defer rdb.Del(ctx, tmp)
-	return zRevRangeWithScores(tmp)
-}
 
-func zRevRangeWithScores(key string) ([][2]interface{}, error) {
-	pairs, err := rdb.ZRevRangeWithScores(ctx, key, 0, -1).Result()
-	if err != nil {
-		return nil, err
+	// Create a map to store all matching CPEs
+	cpeMap := make(map[string]struct{})
+
+	// For each word, find partially matching sets
+	for _, w := range words {
+		pattern := "w:*" + strings.ToLower(w) + "*"
+		iter := rdb.Scan(ctx, 0, pattern, 0).Iterator()
+
+		for iter.Next(ctx) {
+			key := iter.Val()
+			members, err := rdb.SMembers(ctx, key).Result()
+			if err != nil {
+				return nil, err
+			}
+
+			for _, cpe := range members {
+				cpeMap[cpe] = struct{}{}
+			}
+		}
+
+		if err := iter.Err(); err != nil {
+			return nil, err
+		}
 	}
-	out := make([][2]interface{}, len(pairs))
-	for i, z := range pairs {
-		out[i] = [2]interface{}{z.Score, z.Member.(string)}
+
+	if len(cpeMap) == 0 {
+		return nil, nil
 	}
-	return out, nil
+
+	// Get rank for each CPE
+	result := make([][2]interface{}, 0, len(cpeMap))
+	for cpe := range cpeMap {
+		rank, err := rdb.ZScore(ctx, "rank:cpe", cpe).Result()
+		if err == redis.Nil {
+			// If no rank, use 0
+			result = append(result, [2]interface{}{0.0, cpe})
+		} else if err != nil {
+			return nil, err
+		} else {
+			result = append(result, [2]interface{}{rank, cpe})
+		}
+	}
+
+	// Sort by rank (highest first)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i][0].(float64) > result[j][0].(float64)
+	})
+
+	return result, nil
 }
 
 func handleSearch(w http.ResponseWriter, r *http.Request) {
